@@ -1,0 +1,27 @@
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# База данных
+*.sqlite3
+*.db
+
+# Логи
+*.log
+
+# Mini App (React, этап 8)
+node_modules/
+dist/
+
+# Редакторы и macOS
+.vscode/
+.idea/
+.DS_Store
+
