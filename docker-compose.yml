@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped  # поднимется сам после сбоя и перезагрузки сервера
+    env_file: .env
+    volumes:
+      - tracker-data:/app/data  # база живёт вне контейнера и переживает обновления
+
+volumes:
+  tracker-data:
