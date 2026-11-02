@@ -62,6 +62,20 @@ def parse_times(text: str) -> list[str] | None:
     return sorted(set(times))
 
 
+def parse_course_days(text: str) -> int | None:
+    """Длительность курса в днях, от 1 до 10 лет."""
+    text = text.strip()
+    if not text.isdigit() or not 1 <= int(text) <= 3650:
+        return None
+    return int(text)
+
+
+def course_end(days: int, today: date, times: list[str], current_time: str) -> date:
+    """Последний день курса. Сегодня считается, только если приём ещё впереди."""
+    first_day = today if any(t > current_time for t in times) else today + timedelta(days=1)
+    return first_day + timedelta(days=days - 1)
+
+
 def parse_weekdays(text: str) -> str | None:
     """'пн, ср пт' -> '0,2,4'."""
     parts = [p for p in re.split(r"[,\s]+", text.strip().lower()) if p]

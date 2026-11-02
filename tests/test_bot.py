@@ -3,6 +3,7 @@
 import asyncio
 from datetime import date, datetime, timedelta
 
+import aiosqlite
 import pytest
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
@@ -177,7 +178,7 @@ def test_add_pill_dialog_and_command_does_not_become_name():
         await env.send("/today")
         assert await repo.list_pills(env.db) == []
         await env.send("/pill_add")
-        for answer in ("Омега", "1 капсула", "08:00, 20:00", "пн, ср", "1", "30"):
+        for answer in ("Омега", "1 капсула", "08:00, 20:00", "пн, ср", "абв", "-", "1", "30"):
             await env.send(answer)
         pills = await repo.list_pills(env.db)
         assert pills[0]["name"] == "Омега" and pills[0]["stock"] == 30
@@ -302,6 +303,64 @@ def test_deleted_pill_stops_reminders():
         assert sum("Пора принять" in t for t in env.texts()) == 1
         assert (await first_event(env))["status"] == "cancelled"
     run(scenario)
+
+
+def test_course_stops_after_last_day_and_keeps_late_last_dose():
+    async def scenario(env):
+        await repo.add_pill(
+            env.db, "Курс", "1 шт", 1, None, ["23:30"], "",
+            int(datetime(2026, 11, 2, 12, 0, tzinfo=TZ).timestamp()), date(2026, 11, 2),
+        )
+        await env.tick(datetime(2026, 11, 2, 23, 31, tzinfo=TZ))
+        await env.tick(datetime(2026, 11, 3, 0, 5, tzinfo=TZ))  # повтор приёма уже после полуночи
+        assert sum("Пора принять" in t for t in env.texts()) == 2
+        assert sum("Курс закончился" in t for t in env.texts()) == 1
+        assert await repo.list_pills(env.db) == []
+
+        event = await first_event(env)
+        assert event["status"] == "pending"
+        await env.press(f"ev:done:{event['id']}")
+        assert (await first_event(env))["status"] == "done"
+
+        await env.tick(datetime(2026, 11, 3, 23, 31, tzinfo=TZ))
+        assert sum("Пора принять" in t for t in env.texts()) == 2
+        assert sum("Курс закончился" in t for t in env.texts()) == 1
+    run(scenario)
+
+
+def test_course_dialog_and_change_for_existing_pill():
+    async def scenario(env):
+        await env.send("/pill_add")
+        for answer in ("Антибиотик", "1 шт", "23:59", "каждый день", "7", "1", "-"):
+            await env.send(answer)
+        pill = (await repo.list_pills(env.db))[0]
+        assert pill["end_date"] is not None
+        assert "Курс: до" in env.texts()[-1]
+
+        await env.press(f"pill:course:{pill['id']}")
+        await env.send("-")
+        assert (await repo.get_pill(env.db, pill["id"]))["end_date"] is None
+    run(scenario)
+
+
+def test_old_database_gets_new_column_without_losing_data(tmp_path):
+    async def scenario():
+        path = str(tmp_path / "old.sqlite3")
+        old = await aiosqlite.connect(path)
+        await old.execute(
+            """CREATE TABLE pills (id INTEGER PRIMARY KEY, name TEXT NOT NULL, dose TEXT NOT NULL,
+               per_dose REAL NOT NULL DEFAULT 1, stock REAL, active INTEGER NOT NULL DEFAULT 1)"""
+        )
+        await old.execute("INSERT INTO pills (name, dose, stock) VALUES ('Старая', '1 шт', 9)")
+        await old.commit()
+        await old.close()
+
+        db = await database.connect(path)
+        pills = await repo.list_pills(db)
+        assert pills[0]["name"] == "Старая" and pills[0]["stock"] == 9
+        assert pills[0]["end_date"] is None
+        await db.close()
+    asyncio.run(scenario())
 
 
 def test_low_stock_warning_and_refill():

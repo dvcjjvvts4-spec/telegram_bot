@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS pills (
     dose TEXT NOT NULL,
     per_dose REAL NOT NULL DEFAULT 1,
     stock REAL,  -- NULL: остаток не отслеживается
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    end_date TEXT  -- последний день курса; NULL значит принимать постоянно
 );
 
 -- Расписание. Таблетки и обычные напоминания используют один механизм.
@@ -124,5 +125,14 @@ async def connect(path: str) -> aiosqlite.Connection:
     await db.execute("PRAGMA foreign_keys = ON")
     await db.execute("PRAGMA journal_mode = WAL")
     await db.executescript(SCHEMA)
+    await migrate(db)
     await db.commit()
     return db
+
+
+async def migrate(db: aiosqlite.Connection) -> None:
+    """Обновляет базу, созданную старой версией: CREATE IF NOT EXISTS новые колонки не добавит."""
+    async with db.execute("PRAGMA table_info(pills)") as cursor:
+        columns = {row["name"] for row in await cursor.fetchall()}
+    if "end_date" not in columns:
+        await db.execute("ALTER TABLE pills ADD COLUMN end_date TEXT")

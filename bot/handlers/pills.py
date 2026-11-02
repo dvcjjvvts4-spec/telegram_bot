@@ -1,3 +1,5 @@
+from datetime import date
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -6,7 +8,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bot import config, repo, reports
 from bot.keyboards import pill_delete_keyboard, pills_keyboard
-from bot.parsing import parse_number, parse_times, parse_weekdays, weekdays_label
+from bot.parsing import (
+    course_end, parse_course_days, parse_number, parse_times, parse_weekdays, weekdays_label,
+)
 
 router = Router()
 
@@ -16,12 +20,38 @@ class AddPill(StatesGroup):
     dose = State()
     times = State()
     days = State()
+    course = State()
     per_dose = State()
     stock = State()
 
 
 class Refill(StatesGroup):
     amount = State()
+
+
+class ChangeCourse(StatesGroup):
+    days = State()
+
+
+COURSE_QUESTION = "Сколько дней пить? Напиши число. Если постоянно, напиши «-»"
+
+
+def course_label(end_date: str | None, today: date) -> str:
+    if not end_date:
+        return "Курс: постоянно"
+    end = date.fromisoformat(end_date)
+    return f"Курс: до {end:%d.%m.%Y}, осталось {(end - today).days + 1} дн."
+
+
+def end_from_answer(text: str, times: list[str]) -> tuple[bool, date | None]:
+    """Первое значение показывает, понятен ли ответ. Второе: последний день курса."""
+    if text.strip() == "-":
+        return True, None
+    days = parse_course_days(text)
+    if days is None:
+        return False, None
+    now = config.now()
+    return True, course_end(days, now.date(), times, now.strftime("%H:%M"))
 
 
 @router.message(Command("pill_add"))
@@ -63,6 +93,18 @@ async def got_days(message: Message, state: FSMContext) -> None:
         await message.answer("Напиши «каждый день» или дни, например: пн, ср, пт")
         return
     await state.update_data(days=days)
+    await state.set_state(AddPill.course)
+    await message.answer(COURSE_QUESTION)
+
+
+@router.message(AddPill.course, F.text)
+async def got_course(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    valid, end = end_from_answer(message.text, data["times"])
+    if not valid:
+        await message.answer("Нужно число дней, например 14, или «-».")
+        return
+    await state.update_data(end_date=end.isoformat() if end else None)
     await state.set_state(AddPill.per_dose)
     await message.answer("Сколько штук за один приём? Например: 1 или 0,5")
 
@@ -87,13 +129,15 @@ async def got_stock(message: Message, state: FSMContext, db: repo.Db) -> None:
         return
     data = await state.get_data()
     await state.clear()
+    end_date = date.fromisoformat(data["end_date"]) if data["end_date"] else None
     await repo.add_pill(
         db, data["name"], data["dose"], data["per_dose"], stock,
-        data["times"], data["days"], int(config.now().timestamp()),
+        data["times"], data["days"], int(config.now().timestamp()), end_date,
     )
     await message.answer(
         f"Добавил: {data['name']}, {data['dose']}\n"
         f"Время: {', '.join(data['times'])}, {weekdays_label(data['days'])}\n"
+        f"{course_label(data['end_date'], config.today())}\n"
         "Приёмы, время которых сегодня уже прошло, начнутся со следующего раза."
     )
 
@@ -105,6 +149,7 @@ async def pills_text(db: repo.Db, pills: list) -> str:
         times = ", ".join(a["time"] for a in alarms)
         days = weekdays_label(alarms[0]["weekdays"]) if alarms else ""
         row = f"💊 {pill['name']}, {pill['dose']}\n   {times}, {days}"
+        row += f"\n   {course_label(pill['end_date'], config.today())}"
         left = await repo.pill_days_left(db, pill)
         if left is not None:
             row += f"\n   Остаток: {pill['stock']:g} шт., примерно на {int(left)} дн."
@@ -164,6 +209,28 @@ async def delete_pill(callback: CallbackQuery, db: repo.Db) -> None:
     await repo.delete_pill(db, int(callback.data.split(":")[2]))
     await callback.message.edit_text("Удалено, напоминаний больше не будет.")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pill:course:"))
+async def ask_course(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(ChangeCourse.days)
+    await state.update_data(pill_id=int(callback.data.split(":")[2]))
+    await callback.message.answer(COURSE_QUESTION)
+    await callback.answer()
+
+
+@router.message(ChangeCourse.days, F.text)
+async def got_new_course(message: Message, state: FSMContext, db: repo.Db) -> None:
+    pill_id = (await state.get_data())["pill_id"]
+    times = [a["time"] for a in await repo.pill_alarms(db, pill_id)]
+    valid, end = end_from_answer(message.text, times)
+    if not valid:
+        await message.answer("Нужно число дней, например 14, или «-».")
+        return
+    await state.clear()
+    await repo.set_pill_end(db, pill_id, end)
+    label = course_label(end.isoformat() if end else None, config.today())
+    await message.answer(f"Сохранил. {label}")
 
 
 @router.callback_query(F.data.startswith("pill:refill:"))

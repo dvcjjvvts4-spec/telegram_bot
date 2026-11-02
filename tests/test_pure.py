@@ -106,6 +106,17 @@ def test_parse_remind():
     assert parsing.parse_remind("25:00 нельзя", TODAY) is None
 
 
+def test_course_end_counts_today_only_if_dose_is_ahead():
+    assert parsing.course_end(7, TODAY, ["08:00", "20:00"], "12:00") == date(2026, 11, 8)
+    assert parsing.course_end(7, TODAY, ["08:00"], "12:00") == date(2026, 11, 9)
+    assert parsing.course_end(1, TODAY, ["13:00"], "12:00") == TODAY
+
+
+@pytest.mark.parametrize("text, days", [("14", 14), ("0", None), ("абв", None), ("99999", None)])
+def test_parse_course_days(text, days):
+    assert parsing.parse_course_days(text) == days
+
+
 def test_parse_meal():
     assert parsing.parse_meal("Гречка; 350")["kcal"] == 350
     assert parsing.parse_meal("Гречка; 350; 12; 4; 60")["carbs"] == 60

@@ -48,6 +48,7 @@ def pills_keyboard(pills: list) -> Markup:
     for pill in pills:
         rows.append([
             Button(text=f"📦 Пополнить: {pill['name'][:20]}", callback_data=f"pill:refill:{pill['id']}"),
+            Button(text="⏳ Срок", callback_data=f"pill:course:{pill['id']}"),
             Button(text="🗑", callback_data=f"pill:ask:{pill['id']}"),
         ])
     return Markup(inline_keyboard=rows)

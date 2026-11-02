@@ -18,6 +18,8 @@ SEND_ERRORS = (TelegramAPIError, TelegramNetworkError)
 
 
 def occurs_on(alarm, day: date) -> bool:
+    if alarm["end_date"] and day.isoformat() > alarm["end_date"]:
+        return False
     if alarm["date"]:
         return alarm["date"] == day.isoformat()
     return not alarm["weekdays"] or str(day.weekday()) in alarm["weekdays"].split(",")
@@ -86,6 +88,16 @@ async def deliver_events(db: repo.Db, bot: Bot, chat_id: int, now: datetime) -> 
         await repo.event_sent(db, event["id"], event["pings"] + 1, next_at, sent.message_id)
 
 
+async def finish_courses(db: repo.Db, bot: Bot, chat_id: int, today: date) -> None:
+    for pill in await repo.ended_pills(db, today):
+        await bot.send_message(
+            chat_id,
+            f"🏁 Курс закончился: {pill['name']}. Напоминаний больше не будет.\n"
+            "Продлить можно, добавив таблетку заново: /pill_add",
+        )
+        await repo.end_course(db, pill["id"])
+
+
 async def send_summaries(db: repo.Db, bot: Bot, chat_id: int, now: datetime) -> None:
     settings = await repo.get_settings(db)
     day = now.date()
@@ -106,7 +118,8 @@ async def send_summaries(db: repo.Db, bot: Bot, chat_id: int, now: datetime) -> 
 async def tick(db: repo.Db, bot: Bot, chat_id: int, now: datetime) -> None:
     if (await repo.get_settings(db))["autocarry"]:
         await repo.carry_over_tasks(db, now.date())
-    await create_due_events(db, now)
+    await create_due_events(db, now)  # раньше finish_courses: не теряем поздний приём последнего дня
+    await finish_courses(db, bot, chat_id, now.date())
     await deliver_events(db, bot, chat_id, now)
     await send_summaries(db, bot, chat_id, now)
 

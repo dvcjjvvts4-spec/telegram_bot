@@ -224,11 +224,11 @@ async def carry_over_tasks(db: Db, today: date) -> int:
 
 async def add_pill(
     db: Db, name: str, dose: str, per_dose: float, stock: float | None,
-    times: list[str], weekdays: str, now_ts: int,
+    times: list[str], weekdays: str, now_ts: int, end_date: date | None = None,
 ) -> int:
     cursor = await db.execute(
-        "INSERT INTO pills (name, dose, per_dose, stock) VALUES (?, ?, ?, ?)",
-        (name, dose, per_dose, stock),
+        "INSERT INTO pills (name, dose, per_dose, stock, end_date) VALUES (?, ?, ?, ?, ?)",
+        (name, dose, per_dose, stock, end_date.isoformat() if end_date else None),
     )
     pill_id = cursor.lastrowid
     for time in times:
@@ -265,6 +265,29 @@ async def delete_pill(db: Db, pill_id: int) -> None:
              AND alarm_id IN (SELECT id FROM alarms WHERE pill_id = ?)""",
         (pill_id,),
     )
+    await db.commit()
+
+
+async def set_pill_end(db: Db, pill_id: int, end_date: date | None) -> None:
+    await db.execute(
+        "UPDATE pills SET end_date = ? WHERE id = ?",
+        (end_date.isoformat() if end_date else None, pill_id),
+    )
+    await db.commit()
+
+
+async def ended_pills(db: Db, today: date) -> list:
+    return await _all(
+        db,
+        "SELECT * FROM pills WHERE active = 1 AND end_date IS NOT NULL AND end_date < ?",
+        today.isoformat(),
+    )
+
+
+async def end_course(db: Db, pill_id: int) -> None:
+    """В отличие от удаления, не закрывает последний приём: он ещё может ждать ответа."""
+    await db.execute("UPDATE pills SET active = 0 WHERE id = ?", (pill_id,))
+    await db.execute("UPDATE alarms SET active = 0 WHERE pill_id = ?", (pill_id,))
     await db.commit()
 
 
@@ -346,7 +369,11 @@ async def delete_reminder(db: Db, alarm_id: int) -> None:
 
 
 async def active_alarms(db: Db) -> list:
-    return await _all(db, "SELECT * FROM alarms WHERE active = 1")
+    return await _all(
+        db,
+        """SELECT a.*, p.end_date FROM alarms a
+           LEFT JOIN pills p ON p.id = a.pill_id WHERE a.active = 1""",
+    )
 
 
 async def create_event(db: Db, alarm_id: int, day: date, now_ts: int) -> None:
