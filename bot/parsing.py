@@ -27,15 +27,18 @@ def parse_number(text: str) -> float | None:
 
 
 def parse_water(text: str) -> int | None:
-    """'+300', '+300 мл', '300 мл', '0,5 л' -> миллилитры."""
+    """'+300', '300 мл', '0,5 л', 'вода 300', 'выпил 300 мл воды' -> миллилитры."""
     match = re.fullmatch(
-        r"(\+)?\s*(\d+(?:[.,]\d+)?)\s*(мл|ml|л|l)?\.?", text.strip().lower()
+        r"(?:(вода|воды|выпил|выпила|попил|попила)\s*:?\s*)?"
+        r"(\+)?\s*(\d+(?:[.,]\d+)?)\s*(мл|ml|л|l)?\.?(?:\s+воды)?",
+        text.strip().lower(),
     )
-    if not match or not (match[1] or match[3]):
+    if not match or not (match[1] or match[2] or match[4]):
         return None
-    ml = float(match[2].replace(",", "."))
-    if match[3] in ("л", "l"):
-        ml *= 1000
+    amount = float(match[3].replace(",", "."))
+    # «вода 2» без единицы измерения означает литры: 2 мл никто не записывает.
+    in_liters = match[4] in ("л", "l") or (match[1] and not match[4] and amount < 10)
+    ml = amount * 1000 if in_liters else amount
     return round(ml) if 0 < ml <= 5000 else None
 
 
