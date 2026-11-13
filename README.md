@@ -28,7 +28,7 @@
 | `ALLOWED_USER_ID` | да | свой Telegram ID, можно узнать у @userinfobot |
 | `TIMEZONE` | нет | часовой пояс, по умолчанию `Europe/Moscow` |
 | `GEMINI_API_KEY` | для фото | ключ из Google AI Studio |
-| `GEMINI_MODEL` | нет | по умолчанию `gemini-2.5-flash` |
+| `GEMINI_MODEL` | нет | по умолчанию `gemini-3.5-flash` |
 | `GEMINI_PROXY` | нет | прокси, если Gemini недоступен напрямую |
 
 ## Запуск

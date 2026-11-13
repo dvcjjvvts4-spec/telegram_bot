@@ -24,7 +24,7 @@ TZ = ZoneInfo(os.getenv("TIMEZONE", "Europe/Moscow"))
 DB_PATH = os.getenv("DB_PATH", "data/tracker.sqlite3")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 GEMINI_PROXY = os.getenv("GEMINI_PROXY", "") or None
 
 PILL_REPEAT_MINUTES = 30  # пауза между повторами напоминания о таблетке

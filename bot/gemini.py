@@ -4,10 +4,15 @@
 import base64
 import json
 import re
+import ssl
 
 import aiohttp
+import certifi
 
 from bot.config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_PROXY
+
+# Python с python.org не видит сертификаты macOS, поэтому берём список из certifi.
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -84,7 +89,7 @@ async def recognize(image: bytes, mime_type: str = "image/jpeg") -> dict:
     url = API_URL.format(model=GEMINI_MODEL)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=body, headers=headers, proxy=GEMINI_PROXY) as response:
+            async with session.post(url, json=body, headers=headers, proxy=GEMINI_PROXY, ssl=SSL_CONTEXT) as response:
                 if response.status != 200:
                     raise RecognitionError(f"Gemini вернул код {response.status}")
                 payload = await response.json()
