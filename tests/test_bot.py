@@ -240,16 +240,21 @@ def test_unanswered_pill_repeats_then_is_missed_and_can_be_taken_late():
     run(scenario)
 
 
-def test_snooze_delays_next_message():
+def test_snooze_delays_next_message(monkeypatch):
+    # Кнопка ⏰ считает от config.now(), поэтому фиксируем «сейчас» на дне теста,
+    # иначе с реальной датой планировщик дошлёт пропущенные за эти дни дозы.
+    pressed_at = MORNING + timedelta(seconds=5)
+    monkeypatch.setattr(config, "now", lambda: pressed_at)
+
     async def scenario(env):
         await add_pill(env, NOV1)
         await env.tick(MORNING)
         event = await first_event(env)
         await env.press(f"ev:snooze:{event['id']}")
         count = sum("Пора принять" in t for t in env.texts())
-        await env.tick(datetime.fromtimestamp(int(config.now().timestamp()) + 60, TZ))
+        await env.tick(pressed_at + timedelta(minutes=1))
         assert sum("Пора принять" in t for t in env.texts()) == count
-        await env.tick(datetime.fromtimestamp(int(config.now().timestamp()) + 16 * 60, TZ))
+        await env.tick(pressed_at + timedelta(minutes=16))
         assert sum("Пора принять" in t for t in env.texts()) == count + 1
     run(scenario)
 
